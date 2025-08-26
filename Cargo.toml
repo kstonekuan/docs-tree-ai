@@ -1,0 +1,59 @@
+[package]
+name = "doctreeai"
+version = "0.1.0"
+edition = "2021"
+description = "A CLI tool that automates generation and updating of README.md using hierarchical tree-based summarization"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT"
+repository = "https://github.com/username/doctreeai"
+readme = "README.md"
+keywords = ["cli", "documentation", "ai", "readme", "automation"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "doctreeai"
+path = "src/main.rs"
+
+[dependencies]
+# CLI parsing
+clap = { version = "4.4", features = ["derive", "env"] }
+
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# OpenAI SDK for SLM communication
+async-openai = "0.17"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Hashing
+sha2 = "0.10"
+
+# Directory traversal
+walkdir = "2.4"
+
+# Gitignore parsing and filtering
+ignore = "0.4"
+
+# Logging
+log = "0.4"
+env_logger = "0.10"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# File I/O utilities
+fs_extra = "1.3"
+
+# Path utilities
+pathdiff = "0.2"
+
+# Environment file loading
+dotenvy = "0.15"
+
+[dev-dependencies]
+tempfile = "3.8"
+tokio-test = "0.4"
