@@ -42,7 +42,7 @@ impl LanguageModelClient {
             .unwrap_or("unknown");
 
         let prompt = format!(
-            "Analyze this source code file and provide a concise, one-paragraph Markdown summary of its purpose and primary functions. File: {filename}\n\nCode:\n```\n{content}\n```"
+            "Analyze this source code file and provide a comprehensive description of its purpose, functionality, key features, and how it contributes to the overall project. Include details about APIs, configuration options, usage patterns, and any important behaviors that would be relevant for complete project documentation. File: {filename}\n\nCode:\n```\n{content}\n```"
         );
 
         self.generate_completion(&prompt).await
@@ -56,7 +56,7 @@ impl LanguageModelClient {
         let combined_summaries = children_summaries.join("\n\n");
 
         let prompt = format!(
-            "Analyze the following summaries of the contents of the '{directory_name}' directory. Provide a concise, one-paragraph Markdown summary of the directory's overall role and components.\n\nSummaries:\n{combined_summaries}"
+            "Based on the following detailed descriptions of files in the '{directory_name}' directory, provide a comprehensive summary of this directory's role in the project. Include information about functionality, APIs, configuration, usage patterns, and any features that would be important for complete project documentation.\n\nComponent Descriptions:\n{combined_summaries}"
         );
 
         self.generate_completion(&prompt).await
@@ -68,7 +68,7 @@ impl LanguageModelClient {
         project_summary: &str,
     ) -> Result<String> {
         let prompt = format!(
-            "Update the following README.md file with the new project summary provided. Preserve the existing structure, tone, and any manually created sections (like \"Installation\" or \"Usage\"). Integrate the new summary into the relevant part of the document that describes what the project does.\n\n**Existing README.md:**\n---\n{existing_readme}\n---\n\n**New Project Summary:**\n---\n{project_summary}\n---"
+            "Update the existing README.md file by intelligently merging it with new project analysis. Preserve valuable manual content (installation instructions, configuration examples, troubleshooting tips, etc.) while updating sections that should reflect the current codebase.\n\nYour task:\n1. Keep well-written manual sections that are still accurate\n2. Update project description based on current code analysis\n3. Update architecture/features sections if the code has changed\n4. Add any new sections that the project analysis reveals are needed\n5. Remove sections that are no longer relevant\n6. Ensure all examples and instructions match the current codebase\n\n**Existing README:**\n---\n{existing_readme}\n---\n\n**Current Project Analysis:**\n---\n{project_summary}\n---\n\nReturn an updated README that intelligently merges the best of both - preserving good manual content while updating with current project reality."
         );
 
         self.generate_completion(&prompt).await
@@ -80,7 +80,7 @@ impl LanguageModelClient {
         project_name: &str,
     ) -> Result<String> {
         let prompt = format!(
-            "Create a new README.md file for a project called '{project_name}' using the following project summary. Include standard sections like installation, usage, and contributing guidelines where appropriate.\n\n**Project Summary:**\n{project_summary}"
+            "Create a comprehensive, user-friendly README.md file for a project called '{project_name}'. Focus on what the tool does for users and how they can use it. Include all standard sections: installation, configuration, usage examples, troubleshooting, and contributing guidelines.\n\n**Project Information:**\n{project_summary}\n\nCreate a complete README that focuses on user needs and practical usage, not technical implementation details."
         );
 
         self.generate_completion(&prompt).await
