@@ -82,8 +82,7 @@ fn test_cache_manager() -> doctreeai::Result<()> {
     let not_found = cache.get_cached_summary(&test_path, wrong_hash);
     assert_eq!(not_found, None);
     
-    // Test cache persistence
-    cache.save_cache()?;
+    // Cache is automatically persisted when store_summary is called
     
     let cache2 = CacheManager::new(temp_dir.path(), ".test_cache")?;
     let retrieved_after_reload = cache2.get_cached_summary(&test_path, &hash);

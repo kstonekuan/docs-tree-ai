@@ -1,12 +1,12 @@
 # DocTreeAI
 
-DocTreeAI is a Rust-based command-line tool that automates the generation and updating of README.md files using hierarchical tree-based summarization with local Language Models (LLMs). The tool intelligently scans your codebase, generates summaries for files and directories in a bottom-up fashion, and maintains up-to-date documentation with minimal manual effort.
+DocTreeAI is a Rust-based command-line tool that validates README.md files against your codebase using hierarchical tree-based summarization with local Language Models (LLMs). The tool intelligently scans your codebase, generates summaries for files and directories in a bottom-up fashion, and validates that your README accurately reflects the current state of your code by suggesting updates when documentation becomes outdated.
 
 ## Features
 
 - **🌳 Hierarchical Summarization**: Uses tree-based analysis starting from individual files up to the project root
 - **📦 Cache System**: Efficient SHA-256 based caching to avoid redundant API calls  
-- **🔄 Smart README Updates**: Preserves existing manual content while integrating AI-generated summaries
+- **🔄 Smart README Validation**: Validates README content against current codebase and suggests updates when needed
 - **🚫 .gitignore Integration**: Respects your project's ignore patterns
 - **🔌 Local LLM Support**: Works with any OpenAI-compatible local model server
 - **⚡ Fast Performance**: Concurrent processing and intelligent caching for speed
@@ -65,7 +65,7 @@ We strongly recommend OpenAI's **GPT-OSS-20B** model for DocTreeAI because:
 # Initialize DocTreeAI in a project
 doctreeai init
 
-# Generate/update documentation
+# Validate README and suggest updates
 doctreeai run
 
 # Force regeneration (ignore cache)
@@ -91,7 +91,7 @@ doctreeai -v run
 
 1. **Initialize**: Run `doctreeai init` to set up the cache and update .gitignore
 2. **Configure**: Set your environment variables for the local LLM
-3. **Generate**: Run `doctreeai run` to create or update your README.md
+3. **Validate**: Run `doctreeai run` to validate your README.md and get update suggestions
 4. **Iterate**: The tool will use cached summaries for unchanged files on subsequent runs
 
 ## How It Works
@@ -106,16 +106,50 @@ DocTreeAI performs a bottom-up analysis of your codebase:
 
 ### Caching Strategy
 
-- Files are hashed using SHA-256 to detect changes
-- Only modified files trigger new LLM API calls
-- Directory hashes are computed from child hashes
-- Cache is stored in `.doctreeai_cache/` (automatically added to .gitignore)
+DocTreeAI uses a directory-mirrored cache structure for optimal performance:
 
-### Intelligent README Updates
+- **File-Level Caching**: Each source file gets a corresponding `.summary` file in the cache
+- **Directory Summaries**: Directories have `.dir_summary` files containing their aggregated summaries
+- **Structure Mirroring**: Cache directory structure exactly matches your codebase structure
+- **SHA-256 Hashing**: Files are hashed to detect changes and invalidate specific cache entries
+- **Incremental Updates**: Only modified files trigger new LLM API calls
+- **Small Context Windows**: Each cache file is independent, reducing memory usage
 
-- **Existing README**: Preserves manual sections while updating AI-generated content
-- **New README**: Creates a comprehensive template with standard sections
-- **Smart Merging**: Uses the LLM to intelligently integrate new summaries
+Example cache structure:
+```
+.doctreeai_cache/
+├── src/
+│   ├── main.rs.summary
+│   ├── lib.rs.summary
+│   ├── cache.rs.summary
+│   └── .dir_summary
+├── tests/
+│   ├── integration_tests.rs.summary
+│   └── .dir_summary
+└── .dir_summary
+```
+
+### Intelligent README Validation
+
+- **Line Mapping**: Maps README content lines to relevant cached documentation
+- **Change Detection**: Identifies when code changes affect specific README sections
+- **Smart Suggestions**: Provides targeted update suggestions without modifying your files
+- **Mapping Persistence**: Tracks line-to-cache mappings in `.doctreeai_cache/readme_mapping.json`
+
+### Validation Mapping System
+
+DocTreeAI uses a sophisticated mapping system to ensure every line in your README that describes code can be validated:
+
+1. **Content Analysis**: The tool analyzes each line in your README to identify references to code components
+2. **Cache Mapping**: Lines mentioning modules, functions, files, or directories are mapped to relevant cache entries
+3. **Change Tracking**: When cached documentation is invalidated (due to code changes), the tool identifies affected README lines
+4. **Validation Process**: 
+   - Compares current README content against the latest code summaries
+   - Detects outdated or inaccurate descriptions
+   - Generates specific suggestions for lines that need updating
+5. **Non-Invasive**: All suggestions are presented to the user without modifying the README file
+
+This approach ensures your documentation stays accurate while giving you full control over what changes to accept.
 
 ## Supported File Types
 
@@ -134,10 +168,10 @@ The tool consists of several key modules:
 
 - **Scanner**: Gitignore-aware directory traversal and file discovery
 - **Hasher**: SHA-256 file content hashing for change detection
-- **Cache**: JSON-based persistent caching system
+- **Cache**: Directory-mirrored caching system with individual summary files
 - **LLM Client**: OpenAI-compatible API integration with retry logic
 - **Summarizer**: Hierarchical tree-based summarization engine
-- **README Manager**: Intelligent README creation and updating
+- **README Validator**: Validates README against codebase and suggests updates
 
 ## Development
 

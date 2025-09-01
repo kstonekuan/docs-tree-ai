@@ -38,8 +38,7 @@ impl HierarchicalSummarizer {
         // Generate summaries in bottom-up fashion (post-order traversal)
         self.summarize_tree(&mut root_node, base_path).await?;
 
-        // Save cache after processing
-        self.cache_manager.save_cache()?;
+        // Cache is saved incrementally during processing
 
         // Return root-level summary
         root_node.summary.ok_or_else(|| {
@@ -197,8 +196,7 @@ impl HierarchicalSummarizer {
     }
 
     pub async fn cleanup_cache(&mut self, max_age_days: u64) -> Result<()> {
-        self.cache_manager.cleanup_old_entries(max_age_days)?;
-        self.cache_manager.save_cache()
+        self.cache_manager.cleanup_old_entries(max_age_days)
     }
 
     pub fn print_tree_summary(node: &FileNode, base_path: &Path, indent: usize) {

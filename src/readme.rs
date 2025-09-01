@@ -1,66 +1,20 @@
 use crate::error::{DocTreeError, Result};
-use crate::llm::LanguageModelClient;
 use std::fs;
 use std::path::Path;
 
-pub struct ReadmeManager {
-    llm_client: LanguageModelClient,
+pub struct ReadmeManager;
+
+impl Default for ReadmeManager {
+    fn default() -> Self {
+        Self
+    }
 }
 
 impl ReadmeManager {
-    pub fn new(llm_client: LanguageModelClient) -> Self {
-        Self { llm_client }
+    pub fn new() -> Self {
+        Self
     }
 
-    pub async fn update_readme(&self, base_path: &Path, project_summary: &str) -> Result<()> {
-        let readme_path = base_path.join("README.md");
-        
-        if readme_path.exists() {
-            log::info!("Updating existing README.md");
-            self.update_existing_readme(&readme_path, project_summary).await
-        } else {
-            log::info!("Creating new README.md");
-            self.create_new_readme(&readme_path, project_summary, base_path).await
-        }
-    }
-
-    async fn update_existing_readme(&self, readme_path: &Path, project_summary: &str) -> Result<()> {
-        // Read existing README content
-        let existing_content = fs::read_to_string(readme_path)
-            .map_err(|e| DocTreeError::readme(format!("Failed to read README.md: {e}")))?;
-
-        // Use LLM to intelligently merge the new summary with existing content
-        let updated_content = self.llm_client
-            .update_readme(&existing_content, project_summary)
-            .await?;
-
-        // Write updated content back
-        fs::write(readme_path, updated_content)
-            .map_err(|e| DocTreeError::readme(format!("Failed to write README.md: {e}")))?;
-
-        log::info!("Successfully updated README.md");
-        Ok(())
-    }
-
-    async fn create_new_readme(&self, readme_path: &Path, project_summary: &str, base_path: &Path) -> Result<()> {
-        // Derive project name from directory name
-        let project_name = base_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("Project");
-
-        // Generate new README content using LLM
-        let readme_content = self.llm_client
-            .create_new_readme(project_summary, project_name)
-            .await?;
-
-        // Write new README file
-        fs::write(readme_path, readme_content)
-            .map_err(|e| DocTreeError::readme(format!("Failed to create README.md: {e}")))?;
-
-        log::info!("Successfully created new README.md");
-        Ok(())
-    }
 
     pub fn readme_exists(&self, base_path: &Path) -> bool {
         base_path.join("README.md").exists()
@@ -123,24 +77,6 @@ impl ReadmeManager {
         sections
     }
 
-    pub async fn create_minimal_readme(&self, base_path: &Path, project_summary: &str) -> Result<()> {
-        let readme_path = base_path.join("README.md");
-        
-        let project_name = base_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("Project");
-
-        let minimal_content = format!(
-            "# {project_name}\n\n{project_summary}\n\n## Installation\n\nTODO: Add installation instructions\n\n## Usage\n\nTODO: Add usage examples\n\n## Contributing\n\nTODO: Add contribution guidelines\n\n## License\n\nTODO: Add license information\n"
-        );
-
-        fs::write(&readme_path, minimal_content)
-            .map_err(|e| DocTreeError::readme(format!("Failed to create minimal README.md: {e}")))?;
-
-        log::info!("Created minimal README.md template");
-        Ok(())
-    }
 }
 
 #[derive(Debug)]
@@ -174,21 +110,11 @@ impl ReadmeInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use tempfile::TempDir;
     use std::fs;
 
     fn create_test_manager() -> ReadmeManager {
-        let config = Config {
-            openai_api_base: "http://localhost:11434/v1".to_string(),
-            openai_api_key: "test".to_string(),
-            openai_model_name: "test-model".to_string(),
-            cache_dir_name: ".test_cache".to_string(),
-            log_level: "debug".to_string(),
-        };
-
-        let llm_client = LanguageModelClient::new(&config).unwrap();
-        ReadmeManager::new(llm_client)
+        ReadmeManager::new()
     }
 
     #[test]
@@ -256,23 +182,4 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn test_create_minimal_readme() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let manager = create_test_manager();
-        
-        let summary = "This is a test project for demonstrating functionality.";
-        manager.create_minimal_readme(temp_dir.path(), summary).await?;
-        
-        let readme_path = temp_dir.path().join("README.md");
-        assert!(readme_path.exists());
-        
-        let content = fs::read_to_string(&readme_path)?;
-        assert!(content.contains(summary));
-        assert!(content.contains("# "));
-        assert!(content.contains("## Installation"));
-        assert!(content.contains("## Usage"));
-        
-        Ok(())
-    }
 }

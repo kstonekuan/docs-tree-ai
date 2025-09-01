@@ -4,8 +4,8 @@ use async_openai::{
     config::OpenAIConfig,
     types::{
         ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
-        ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent,
-        CreateChatCompletionRequest, Role,
+        ChatCompletionRequestSystemMessageContent, ChatCompletionRequestUserMessage,
+        ChatCompletionRequestUserMessageContent, CreateChatCompletionRequest,
     },
     Client,
 };
@@ -86,6 +86,10 @@ impl LanguageModelClient {
         self.generate_completion(&prompt).await
     }
 
+    pub async fn generate_readme_suggestion(&self, prompt: &str) -> Result<String> {
+        self.generate_completion(prompt).await
+    }
+
     async fn generate_completion(&self, prompt: &str) -> Result<String> {
         let mut attempt = 0;
 
@@ -117,13 +121,11 @@ impl LanguageModelClient {
     async fn try_generate_completion(&self, prompt: &str) -> Result<String> {
         let messages = vec![
             ChatCompletionRequestMessage::System(ChatCompletionRequestSystemMessage {
-                role: Role::System,
-                content: Some("You are a helpful assistant that generates concise, accurate documentation. Always respond in Markdown format. Focus on clarity and brevity.".to_string()),
+                content: ChatCompletionRequestSystemMessageContent::Text("You are a helpful assistant that generates concise, accurate documentation. Always respond in Markdown format. Focus on clarity and brevity.".to_string()),
                 name: None,
             }),
             ChatCompletionRequestMessage::User(ChatCompletionRequestUserMessage {
-                role: Role::User,
-                content: Some(ChatCompletionRequestUserMessageContent::Text(prompt.to_string())),
+                content: ChatCompletionRequestUserMessageContent::Text(prompt.to_string()),
                 name: None,
             }),
         ];
@@ -131,7 +133,7 @@ impl LanguageModelClient {
         let request = CreateChatCompletionRequest {
             model: self.model_name.clone(),
             messages,
-            max_tokens: Some(1000),
+            max_completion_tokens: Some(1000),
             temperature: Some(0.3),
             top_p: Some(0.9),
             n: Some(1),
@@ -139,16 +141,7 @@ impl LanguageModelClient {
             stop: None,
             presence_penalty: Some(0.0),
             frequency_penalty: Some(0.0),
-            logit_bias: None,
-            user: None,
-            response_format: None,
-            seed: None,
-            tools: None,
-            tool_choice: None,
-            #[allow(deprecated)]
-            function_call: None,
-            #[allow(deprecated)]
-            functions: None,
+            ..Default::default()
         };
 
         log::debug!("Sending request to LLM with model: {}", self.model_name);

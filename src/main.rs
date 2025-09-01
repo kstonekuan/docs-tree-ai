@@ -5,6 +5,7 @@ use doctreeai::{
     error::Result,
     llm::LanguageModelClient,
     readme::ReadmeManager,
+    readme_validator::ReadmeValidator,
     summarizer::HierarchicalSummarizer,
 };
 use std::path::{Path, PathBuf};
@@ -138,6 +139,7 @@ async fn run_command(path: &Path, force: bool, dry_run: bool) -> Result<()> {
     
     // Create summarizer and generate project summary
     let llm_client_2 = LanguageModelClient::new(&config)?;
+    let cache_manager_2 = CacheManager::new(path, &config.cache_dir_name)?;
     let mut summarizer = HierarchicalSummarizer::new(llm_client, cache_manager, force);
     
     println!("📊 Generating hierarchical project summary...");
@@ -155,13 +157,19 @@ async fn run_command(path: &Path, force: bool, dry_run: bool) -> Result<()> {
         return Ok(());
     }
     
-    // Update README.md
-    println!("📝 Updating README.md...");
-    let readme_manager = ReadmeManager::new(llm_client_2);
-    readme_manager.update_readme(path, &project_summary).await?;
+    // Validate README.md against cache
+    println!("📝 Validating README.md against current codebase...");
+    let mut readme_validator = ReadmeValidator::new(cache_manager_2, llm_client_2);
+    let validation_results = readme_validator.validate_readme(path, &project_summary).await?;
     
-    println!("✅ Documentation generation completed successfully!");
-    println!("📄 README.md has been updated with the latest project summary");
+    ReadmeValidator::print_validation_results(&validation_results);
+    
+    if validation_results.is_empty() {
+        println!("✅ README.md validation completed - no updates needed!");
+    } else {
+        println!("✅ README.md validation completed - {} suggestions generated!", validation_results.len());
+        println!("💡 Review the suggestions above and update your README.md accordingly");
+    }
     
     Ok(())
 }
@@ -202,8 +210,7 @@ async fn info_command(path: &Path) -> Result<()> {
     println!();
     
     // README info
-    let llm_client = LanguageModelClient::new(&config)?;
-    let readme_manager = ReadmeManager::new(llm_client);
+    let readme_manager = ReadmeManager::new();
     let readme_info = readme_manager.get_readme_info(path)?;
     
     println!("📄 README Information:");

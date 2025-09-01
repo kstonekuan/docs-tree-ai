@@ -1,50 +1,63 @@
 use crate::error::{DocTreeError, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CacheEntry {
-    pub file_path: PathBuf,
+pub struct CacheSummary {
+    pub source_path: PathBuf,
     pub content_hash: String,
     pub summary: String,
     pub timestamp: u64,
+    pub is_directory: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CacheData {
-    pub version: String,
-    pub entries: HashMap<String, CacheEntry>,
+pub struct ReadmeLineMapping {
+    pub line_number: usize,
+    pub line_content: String,
+    pub cache_keys: Vec<String>,
+    pub last_validated_hash: Option<String>,
 }
 
-impl Default for CacheData {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadmeMappingData {
+    pub version: String,
+    pub readme_hash: String,
+    pub mappings: Vec<ReadmeLineMapping>,
+}
+
+impl Default for ReadmeMappingData {
     fn default() -> Self {
         Self {
             version: "1.0.0".to_string(),
-            entries: HashMap::new(),
+            readme_hash: String::new(),
+            mappings: Vec::new(),
         }
     }
 }
 
+
 pub struct CacheManager {
     cache_dir: PathBuf,
-    cache_file: PathBuf,
-    data: CacheData,
+    base_path: PathBuf,
+    mapping_file: PathBuf,
+    mapping_data: ReadmeMappingData,
 }
 
 impl CacheManager {
     pub fn new(base_path: &Path, cache_dir_name: &str) -> Result<Self> {
         let cache_dir = base_path.join(cache_dir_name);
-        let cache_file = cache_dir.join("cache.json");
+        let mapping_file = cache_dir.join("readme_mapping.json");
 
         let mut manager = Self {
             cache_dir,
-            cache_file,
-            data: CacheData::default(),
+            base_path: base_path.to_path_buf(),
+            mapping_file,
+            mapping_data: ReadmeMappingData::default(),
         };
 
-        manager.load_cache()?;
+        manager.load_mapping()?;
         Ok(manager)
     }
 
@@ -89,104 +102,153 @@ impl CacheManager {
         Ok(())
     }
 
-    pub fn load_cache(&mut self) -> Result<()> {
-        if self.cache_file.exists() {
-            let content = fs::read_to_string(&self.cache_file)?;
-            self.data = serde_json::from_str(&content)
-                .map_err(|e| DocTreeError::cache(format!("Failed to parse cache: {e}")))?;
-            
-            log::info!("Loaded cache with {} entries", self.data.entries.len());
+    fn get_cache_path(&self, source_path: &Path) -> Result<PathBuf> {
+        let relative_path = source_path.strip_prefix(&self.base_path)
+            .unwrap_or(source_path);
+        
+        let cache_path = if source_path.is_dir() {
+            self.cache_dir.join(relative_path).join(".dir_summary")
         } else {
-            log::info!("No existing cache found, starting fresh");
-            self.data = CacheData::default();
-        }
-        Ok(())
+            let mut cache_file = self.cache_dir.join(relative_path);
+            let filename = format!("{}.summary", cache_file.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown"));
+            cache_file.set_file_name(filename);
+            cache_file
+        };
+        
+        Ok(cache_path)
     }
 
-    pub fn save_cache(&self) -> Result<()> {
-        self.initialize_cache_directory()?;
+    pub fn get_cached_summary(&self, source_path: &Path, content_hash: &str) -> Option<String> {
+        let cache_path = self.get_cache_path(source_path).ok()?;
         
-        let content = serde_json::to_string_pretty(&self.data)
-            .map_err(|e| DocTreeError::cache(format!("Failed to serialize cache: {e}")))?;
-        
-        fs::write(&self.cache_file, content)
-            .map_err(|e| DocTreeError::cache(format!("Failed to write cache file: {e}")))?;
-        
-        log::debug!("Cache saved with {} entries", self.data.entries.len());
-        Ok(())
-    }
-
-    pub fn get_cached_summary(&self, file_path: &Path, content_hash: &str) -> Option<String> {
-        let key = self.path_to_cache_key(file_path);
-        
-        if let Some(entry) = self.data.entries.get(&key) {
-            if entry.content_hash == content_hash {
-                log::debug!("Cache hit for: {}", file_path.display());
-                return Some(entry.summary.clone());
-            } else {
-                log::debug!("Cache miss (hash mismatch) for: {}", file_path.display());
-            }
-        } else {
-            log::debug!("Cache miss (not found) for: {}", file_path.display());
+        if !cache_path.exists() {
+            log::debug!("Cache miss (file not found) for: {}", source_path.display());
+            return None;
         }
         
-        None
+        let content = fs::read_to_string(&cache_path).ok()?;
+        let cache_summary: CacheSummary = serde_json::from_str(&content).ok()?;
+        
+        if cache_summary.content_hash == content_hash {
+            log::debug!("Cache hit for: {}", source_path.display());
+            Some(cache_summary.summary)
+        } else {
+            log::debug!("Cache miss (hash mismatch) for: {}", source_path.display());
+            None
+        }
     }
 
-    pub fn store_summary(&mut self, file_path: &Path, content_hash: String, summary: String) -> Result<()> {
-        let key = self.path_to_cache_key(file_path);
+    pub fn store_summary(&mut self, source_path: &Path, content_hash: String, summary: String) -> Result<()> {
+        let cache_path = self.get_cache_path(source_path)?;
+        
+        // Create parent directory if needed
+        if let Some(parent) = cache_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| DocTreeError::cache(format!("Failed to create cache directory: {e}")))?;
+        }
+        
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
 
-        let entry = CacheEntry {
-            file_path: file_path.to_path_buf(),
+        let cache_summary = CacheSummary {
+            source_path: source_path.to_path_buf(),
             content_hash,
             summary,
             timestamp,
+            is_directory: source_path.is_dir(),
         };
 
-        self.data.entries.insert(key, entry);
-        log::debug!("Stored summary for: {}", file_path.display());
+        let content = serde_json::to_string_pretty(&cache_summary)
+            .map_err(|e| DocTreeError::cache(format!("Failed to serialize cache: {e}")))?;
+        
+        fs::write(&cache_path, content)
+            .map_err(|e| DocTreeError::cache(format!("Failed to write cache file: {e}")))?;
+        
+        log::debug!("Stored summary for: {} at {}", source_path.display(), cache_path.display());
         
         Ok(())
     }
 
-    pub fn invalidate_entry(&mut self, file_path: &Path) {
-        let key = self.path_to_cache_key(file_path);
-        if self.data.entries.remove(&key).is_some() {
-            log::debug!("Invalidated cache entry for: {}", file_path.display());
+    pub fn invalidate_entry(&mut self, source_path: &Path) -> Result<()> {
+        let cache_path = self.get_cache_path(source_path)?;
+        
+        if cache_path.exists() {
+            fs::remove_file(&cache_path)
+                .map_err(|e| DocTreeError::cache(format!("Failed to remove cache file: {e}")))?;
+            log::debug!("Invalidated cache entry for: {}", source_path.display());
         }
+        
+        Ok(())
     }
 
     pub fn clear_cache(&mut self) -> Result<()> {
-        self.data.entries.clear();
-        
         if self.cache_dir.exists() {
-            fs::remove_dir_all(&self.cache_dir)
-                .map_err(|e| DocTreeError::cache(format!("Failed to remove cache directory: {e}")))?;
-            log::info!("Cleared cache directory: {}", self.cache_dir.display());
+            // Remove all .summary and .dir_summary files but keep mappings
+            Self::clear_cache_files(&self.cache_dir)?;
+            log::info!("Cleared cache files in: {}", self.cache_dir.display());
         }
         
+        Ok(())
+    }
+    
+    fn clear_cache_files(dir: &Path) -> Result<()> {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            
+            if path.is_dir() {
+                Self::clear_cache_files(&path)?;
+                // Remove empty directories
+                if fs::read_dir(&path)?.next().is_none() {
+                    fs::remove_dir(&path)?;
+                }
+            } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.ends_with(".summary") || name == ".dir_summary" {
+                    fs::remove_file(&path)?;
+                }
+            }
+        }
         Ok(())
     }
 
     pub fn get_cache_stats(&self) -> (usize, u64) {
-        let entry_count = self.data.entries.len();
-        let total_size = self.cache_file.metadata()
-            .map(|metadata| metadata.len())
-            .unwrap_or(0);
+        let mut entry_count = 0;
+        let mut total_size = 0u64;
+        
+        if self.cache_dir.exists() {
+            Self::count_cache_files(&self.cache_dir, &mut entry_count, &mut total_size);
+        }
         
         (entry_count, total_size)
     }
-
-    fn path_to_cache_key(&self, path: &Path) -> String {
-        path.to_string_lossy().replace('\\', "/")
+    
+    fn count_cache_files(dir: &Path, count: &mut usize, size: &mut u64) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                
+                if path.is_dir() {
+                    Self::count_cache_files(&path, count, size);
+                } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.ends_with(".summary") || name == ".dir_summary" {
+                        *count += 1;
+                        if let Ok(metadata) = path.metadata() {
+                            *size += metadata.len();
+                        }
+                    }
+                }
+            }
+        }
     }
 
+
     pub fn is_cache_valid(&self) -> bool {
-        self.data.version == "1.0.0"
+        // Cache is always valid in the new structure since each file is independent
+        true
     }
 
     pub fn cleanup_old_entries(&mut self, max_age_days: u64) -> Result<()> {
@@ -195,15 +257,124 @@ impl CacheManager {
             .unwrap_or_default()
             .as_secs() - (max_age_days * 24 * 60 * 60);
 
-        let initial_count = self.data.entries.len();
-        self.data.entries.retain(|_, entry| entry.timestamp > cutoff_time);
-        let removed_count = initial_count - self.data.entries.len();
-
-        if removed_count > 0 {
-            log::info!("Cleaned up {removed_count} old cache entries");
-        }
-
+        Self::cleanup_old_files(&self.cache_dir, cutoff_time)?;
         Ok(())
+    }
+    
+    fn cleanup_old_files(dir: &Path, cutoff_time: u64) -> Result<()> {
+        if !dir.exists() {
+            return Ok(());
+        }
+        
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            
+            if path.is_dir() {
+                Self::cleanup_old_files(&path, cutoff_time)?;
+            } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.ends_with(".summary") || name == ".dir_summary" {
+                    if let Ok(content) = fs::read_to_string(&path) {
+                        if let Ok(summary) = serde_json::from_str::<CacheSummary>(&content) {
+                            if summary.timestamp < cutoff_time {
+                                fs::remove_file(&path)?;
+                                log::debug!("Removed old cache file: {}", path.display());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn load_mapping(&mut self) -> Result<()> {
+        if self.mapping_file.exists() {
+            let content = fs::read_to_string(&self.mapping_file)?;
+            self.mapping_data = serde_json::from_str(&content)
+                .map_err(|e| DocTreeError::cache(format!("Failed to parse mapping: {e}")))?;
+            
+            log::info!("Loaded README mapping with {} entries", self.mapping_data.mappings.len());
+        } else {
+            log::info!("No existing README mapping found");
+            self.mapping_data = ReadmeMappingData::default();
+        }
+        Ok(())
+    }
+
+    pub fn save_mapping(&self) -> Result<()> {
+        self.initialize_cache_directory()?;
+        
+        let content = serde_json::to_string_pretty(&self.mapping_data)
+            .map_err(|e| DocTreeError::cache(format!("Failed to serialize mapping: {e}")))?;
+        
+        fs::write(&self.mapping_file, content)
+            .map_err(|e| DocTreeError::cache(format!("Failed to write mapping file: {e}")))?;
+        
+        log::debug!("README mapping saved with {} entries", self.mapping_data.mappings.len());
+        Ok(())
+    }
+
+
+    pub fn update_readme_mapping(&mut self, readme_hash: String, mappings: Vec<ReadmeLineMapping>) -> Result<()> {
+        self.mapping_data.readme_hash = readme_hash;
+        self.mapping_data.mappings = mappings;
+        self.save_mapping()
+    }
+
+    pub fn get_readme_mapping(&self) -> &ReadmeMappingData {
+        &self.mapping_data
+    }
+
+    pub fn get_affected_readme_lines(&self, cache_key: &str) -> Vec<usize> {
+        self.mapping_data.mappings
+            .iter()
+            .filter(|mapping| mapping.cache_keys.contains(&cache_key.to_string()))
+            .map(|mapping| mapping.line_number)
+            .collect()
+    }
+
+    pub fn validate_readme_hash(&self, current_hash: &str) -> bool {
+        self.mapping_data.readme_hash == current_hash
+    }
+
+    pub fn get_cache_summary(&self, source_path: &Path) -> Option<CacheSummary> {
+        let cache_path = self.get_cache_path(source_path).ok()?;
+        
+        if !cache_path.exists() {
+            return None;
+        }
+        
+        let content = fs::read_to_string(&cache_path).ok()?;
+        serde_json::from_str(&content).ok()
+    }
+
+    pub fn get_all_summaries(&self) -> Vec<CacheSummary> {
+        let mut summaries = Vec::new();
+        if self.cache_dir.exists() {
+            Self::collect_summaries(&self.cache_dir, &mut summaries);
+        }
+        summaries
+    }
+    
+    fn collect_summaries(dir: &Path, summaries: &mut Vec<CacheSummary>) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                
+                if path.is_dir() {
+                    Self::collect_summaries(&path, summaries);
+                } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.ends_with(".summary") || name == ".dir_summary" {
+                        if let Ok(content) = fs::read_to_string(&path) {
+                            if let Ok(summary) = serde_json::from_str::<CacheSummary>(&content) {
+                                summaries.push(summary);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -232,7 +403,7 @@ mod tests {
         assert_eq!(retrieved_miss, None);
 
         // Test invalidation
-        cache.invalidate_entry(&test_path);
+        cache.invalidate_entry(&test_path)?;
         let after_invalidation = cache.get_cached_summary(&test_path, &hash);
         assert_eq!(after_invalidation, None);
 
@@ -250,7 +421,7 @@ mod tests {
         {
             let mut cache1 = CacheManager::new(temp_dir.path(), ".test_cache")?;
             cache1.store_summary(&test_path, hash.clone(), summary.clone())?;
-            cache1.save_cache()?;
+            // Cache is automatically persisted when store_summary is called
         }
 
         // Load in second instance
