@@ -34,15 +34,17 @@ The binary will be available at `target/release/doctreeai`.
 DocTreeAI uses environment variables for configuration. We **highly recommend** using OpenAI's GPT-OSS-20B model for optimal documentation generation:
 
 ```bash
-# Recommended Configuration with GPT-OSS-20B
-export OPENAI_API_BASE="http://localhost:11434/v1"  # Your local LLM endpoint
-export OPENAI_MODEL_NAME="gpt-oss-20b"             # OpenAI's GPT-OSS-20B (recommended)
+# Required Configuration
+export OPENAI_API_BASE="http://localhost:11434/v1"  # Your LLM endpoint (required)
+export OPENAI_MODEL_NAME="gpt-oss-20b"             # Model name (required)
 
-# Optional
-export OPENAI_API_KEY="ollama"                     # API key (can be placeholder)
-export DOCTREEAI_CACHE_DIR=".doctreeai_cache"      # Custom cache directory
-export DOCTREEAI_LOG_LEVEL="info"                  # Logging level
+# Optional Configuration
+export OPENAI_API_KEY="ollama"                     # API key (defaults to "ollama")
+export DOCTREEAI_CACHE_DIR=".doctreeai_cache"      # Cache directory (defaults to ".doctreeai_cache")
+export DOCTREEAI_LOG_LEVEL="info"                  # Logging level (defaults to "info")
 ```
+
+**Note:** Both `OPENAI_API_BASE` and `OPENAI_MODEL_NAME` are required. The tool will not use default values for these settings to ensure you explicitly configure your LLM endpoint and model.
 
 ### Why GPT-OSS-20B?
 
@@ -192,7 +194,7 @@ cargo clippy
 1. Set up a local LLM server with GPT-OSS-20B:
    ```bash
    # Using Ollama (recommended)
-   ollama pull gpt-oss-20b
+   ollama pull gpt-oss:20b
    ollama serve
    
    # Or using LM Studio - download openai/gpt-oss-20b from the model library
@@ -224,7 +226,7 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 - Ensure your local LLM server is running
 - Verify the `OPENAI_API_BASE` URL is correct
 - Check that GPT-OSS-20B model is available: `ollama list` or check LM Studio model library
-- For first-time setup: `ollama pull gpt-oss-20b`
+- For first-time setup: `ollama pull gpt-oss:20b`
 
 **Permission Denied**
 - Ensure the tool has write permissions for the target directory

@@ -14,19 +14,30 @@ impl Config {
     pub fn load() -> Result<Self> {
         // Load .env file if it exists (ignore errors if not found)
         let _ = dotenvy::dotenv();
+
+        // API base URL is required - no default
         let openai_api_base = env::var("OPENAI_API_BASE")
             .or_else(|_| env::var("OPENAI_BASE_URL"))
-            .unwrap_or_else(|_| "http://localhost:11434/v1".to_string());
+            .map_err(|_| {
+                DocTreeError::config(
+                    "OPENAI_API_BASE or OPENAI_BASE_URL environment variable is required",
+                )
+            })?;
 
-        let openai_api_key = env::var("OPENAI_API_KEY")
-            .unwrap_or_else(|_| "ollama".to_string());
+        // API key can default to "local" for local model instances
+        let openai_api_key = env::var("OPENAI_API_KEY").unwrap_or_else(|_| "local".to_string());
 
+        // Model name is required - no default
         let openai_model_name = env::var("OPENAI_MODEL_NAME")
             .or_else(|_| env::var("OPENAI_MODEL"))
-            .unwrap_or_else(|_| "llama3.2:latest".to_string());
+            .map_err(|_| {
+                DocTreeError::config(
+                    "OPENAI_MODEL_NAME or OPENAI_MODEL environment variable is required",
+                )
+            })?;
 
-        let cache_dir_name = env::var("DOCTREEAI_CACHE_DIR")
-            .unwrap_or_else(|_| ".doctreeai_cache".to_string());
+        let cache_dir_name =
+            env::var("DOCTREEAI_CACHE_DIR").unwrap_or_else(|_| ".doctreeai_cache".to_string());
 
         let log_level = env::var("DOCTREEAI_LOG_LEVEL")
             .or_else(|_| env::var("LOG_LEVEL"))
@@ -54,8 +65,12 @@ impl Config {
             return Err(DocTreeError::config("Cache directory name cannot be empty"));
         }
 
-        if !self.openai_api_base.starts_with("http://") && !self.openai_api_base.starts_with("https://") {
-            return Err(DocTreeError::config("OPENAI_API_BASE must be a valid HTTP/HTTPS URL"));
+        if !self.openai_api_base.starts_with("http://")
+            && !self.openai_api_base.starts_with("https://")
+        {
+            return Err(DocTreeError::config(
+                "OPENAI_API_BASE must be a valid HTTP/HTTPS URL",
+            ));
         }
 
         log::info!("Configuration loaded successfully:");

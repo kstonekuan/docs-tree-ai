@@ -184,7 +184,10 @@ mod tests {
 
     async fn create_test_client() -> LanguageModelClient {
         // Note: These tests require a running local LLM server
-        // Load configuration from environment variables
+        // Set required environment variables for testing
+        std::env::set_var("OPENAI_API_BASE", "http://localhost:11434/v1");
+        std::env::set_var("OPENAI_MODEL_NAME", "test-model");
+        
         let config = Config::load().unwrap();
 
         LanguageModelClient::new(&config).unwrap()

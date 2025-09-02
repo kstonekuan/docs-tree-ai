@@ -107,10 +107,10 @@ impl CacheManager {
             .unwrap_or(source_path);
         
         let cache_path = if source_path.is_dir() {
-            self.cache_dir.join(relative_path).join(".dir_summary")
+            self.cache_dir.join(relative_path).join(".dir_summary.json")
         } else {
             let mut cache_file = self.cache_dir.join(relative_path);
-            let filename = format!("{}.summary", cache_file.file_name()
+            let filename = format!("{}.summary.json", cache_file.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown"));
             cache_file.set_file_name(filename);
@@ -187,7 +187,7 @@ impl CacheManager {
 
     pub fn clear_cache(&mut self) -> Result<()> {
         if self.cache_dir.exists() {
-            // Remove all .summary and .dir_summary files but keep mappings
+            // Remove all .summary.json and .dir_summary.json files but keep mappings
             Self::clear_cache_files(&self.cache_dir)?;
             log::info!("Cleared cache files in: {}", self.cache_dir.display());
         }
@@ -207,7 +207,7 @@ impl CacheManager {
                     fs::remove_dir(&path)?;
                 }
             } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.ends_with(".summary") || name == ".dir_summary" {
+                if name.ends_with(".summary.json") || name == ".dir_summary.json" {
                     fs::remove_file(&path)?;
                 }
             }
@@ -234,7 +234,7 @@ impl CacheManager {
                 if path.is_dir() {
                     Self::count_cache_files(&path, count, size);
                 } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if name.ends_with(".summary") || name == ".dir_summary" {
+                    if name.ends_with(".summary.json") || name == ".dir_summary.json" {
                         *count += 1;
                         if let Ok(metadata) = path.metadata() {
                             *size += metadata.len();
@@ -273,7 +273,7 @@ impl CacheManager {
             if path.is_dir() {
                 Self::cleanup_old_files(&path, cutoff_time)?;
             } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.ends_with(".summary") || name == ".dir_summary" {
+                if name.ends_with(".summary.json") || name == ".dir_summary.json" {
                     if let Ok(content) = fs::read_to_string(&path) {
                         if let Ok(summary) = serde_json::from_str::<CacheSummary>(&content) {
                             if summary.timestamp < cutoff_time {
@@ -365,7 +365,7 @@ impl CacheManager {
                 if path.is_dir() {
                     Self::collect_summaries(&path, summaries);
                 } else if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if name.ends_with(".summary") || name == ".dir_summary" {
+                    if name.ends_with(".summary.json") || name == ".dir_summary.json" {
                         if let Ok(content) = fs::read_to_string(&path) {
                             if let Ok(summary) = serde_json::from_str::<CacheSummary>(&content) {
                                 summaries.push(summary);
